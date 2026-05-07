@@ -1,0 +1,37 @@
+{
+	"cleanUrls": true,
+	"headers": [
+		{
+			"source": "/models/(.*).glb",
+			"headers": [
+				{ "key": "Content-Type", "value": "model/gltf-binary" },
+				{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+			]
+		},
+		{
+			"source": "/audio/(.*).ogg",
+			"headers": [
+				{ "key": "Content-Type", "value": "audio/ogg" },
+				{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+			]
+		},
+		{
+			"source": "/sprites/(.*)",
+			"headers": [
+				{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+			]
+		},
+		{
+			"source": "/js/(.*).js",
+			"headers": [
+				{ "key": "Content-Type", "value": "text/javascript" }
+			]
+		},
+		{
+			"source": "/(.*).html",
+			"headers": [
+				{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+			]
+		}
+	]
+}
