@@ -226,10 +226,15 @@ async function init() {
 
 	let race = null;
 	let contactListener = null;
+	let resultsShown = false;
+	let finishBannerShown = false;
 
 	function startRace( settings ) {
 
 		console.log( '[Race] starting with', settings );
+
+		finishBannerShown = false;
+		resultsShown = false;
 
 		// Tear down any prior race state.
 		if ( race ) tearDownRace( race );
@@ -285,7 +290,6 @@ async function init() {
 	startRace( initialSettings );
 
 	const timer = new THREE.Timer();
-	let resultsShown = false;
 
 	function animate() {
 
@@ -319,22 +323,49 @@ async function init() {
 
 		if ( race.state === 'countdown' ) {
 
+			const prevLabel = raceUI.lastCountdownInt;
 			raceUI.showCountdown( race.countdownRemaining );
+			if ( raceUI.lastCountdownInt !== prevLabel ) {
+
+				if ( raceUI.lastCountdownInt === 'GO!' ) {
+
+					audio.playBeep( 1320, 0.35, 0.3 );
+					raceUI.shakeScreen();
+
+				} else {
+
+					audio.playBeep( 660, 0.15, 0.2 );
+
+				}
+
+			}
 
 		} else if ( race.state === 'racing' ) {
 
 			raceUI.hideCountdown();
 			raceUI.updateHUD( hud );
 
+			if ( race.player.finishedAt !== null && ! finishBannerShown ) {
+
+				finishBannerShown = true;
+				const won = race.livePositions().indexOf( race.player ) === 0;
+				raceUI.showFinishBanner( won );
+				audio.playBeep( won ? 880 : 440, 0.4, 0.3 );
+
+			}
+
 		} else if ( race.state === 'finished' && ! resultsShown ) {
 
 			resultsShown = true;
 			raceUI.hideHUD();
 			raceUI.hideCountdown();
+			const playerWon = race.finishOrder[ 0 ]?.isPlayer;
+			if ( playerWon ) raceUI.burstConfetti();
 			raceUI.showResults( hud, {
 				onRaceAgain: async () => {
 
 					resultsShown = false;
+					finishBannerShown = false;
 					if ( editorLink ) editorLink.style.display = 'none';
 					const next = await raceUI.showSetup();
 					startRace( next );
