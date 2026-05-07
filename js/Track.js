@@ -115,7 +115,7 @@ const NPC_TRUCKS = [
 	[ 'vehicle-truck-red',    -1.36, -0.15, -23.80, 155.9 ],
 ];
 
-export function buildTrack( scene, models, customCells ) {
+export function buildTrack( scene, models, customCells, options = {} ) {
 
 	const trackGroup = new THREE.Group();
 	trackGroup.position.y = -0.5;
@@ -277,7 +277,7 @@ export function buildTrack( scene, models, customCells ) {
 
 	} );
 
-	if ( ! customCells ) {
+	if ( ! customCells && ! options.excludeNpcTrucks ) {
 
 		for ( const [ key, x, y, z, rotDeg ] of NPC_TRUCKS ) {
 
@@ -374,9 +374,10 @@ export function decodeCells( str ) {
 
 export function computeSpawnPosition( cells ) {
 
-	let cell = cells[ 0 ];
+	const list = cells || TRACK_CELLS;
+	let cell = list[ 0 ];
 
-	for ( const c of cells ) {
+	for ( const c of list ) {
 
 		if ( c[ 2 ] === 'track-finish' ) {
 

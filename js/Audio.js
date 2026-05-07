@@ -225,6 +225,25 @@ export class GameAudio {
 
 	}
 
+	// Tone-generator beep for countdown / finish jingles. No audio asset needed.
+	playBeep( freq = 660, duration = 0.18, volume = 0.25 ) {
+
+		if ( ! this.unlocked || ! this.listener ) return;
+		const ctx = this.listener.context;
+		const now = ctx.currentTime;
+		const osc = ctx.createOscillator();
+		const gain = ctx.createGain();
+		osc.type = 'square';
+		osc.frequency.value = freq;
+		gain.gain.setValueAtTime( 0, now );
+		gain.gain.linearRampToValueAtTime( volume, now + 0.01 );
+		gain.gain.exponentialRampToValueAtTime( 0.0001, now + duration );
+		osc.connect( gain ); gain.connect( ctx.destination );
+		osc.start( now );
+		osc.stop( now + duration );
+
+	}
+
 	playImpact( impactVelocity ) {
 
 		if ( ! this.unlocked || this.impactPool.length === 0 ) return;

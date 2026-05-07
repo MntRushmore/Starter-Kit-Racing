@@ -12,7 +12,7 @@ const _up = new THREE.Vector3( 0, 1, 0 );
 
 const SPEED_SCALE = 12.5;
 const LINEAR_DAMP = 0.1;
-export const MAX_SPEED = 1.5;
+export const MAX_SPEED = 2.1;
 
 function lerpAngle( a, b, t ) {
 
@@ -120,10 +120,10 @@ export class Vehicle {
 			let direction = Math.sign( this.linearSpeed );
 			if ( direction === 0 ) direction = Math.abs( this.inputZ ) > 0.1 ? Math.sign( this.inputZ ) : 1;
 
-			const steeringGrip = THREE.MathUtils.clamp( Math.abs( this.linearSpeed ), 0.2, 1.0 );
+			const steeringGrip = THREE.MathUtils.clamp( Math.abs( this.linearSpeed ) * 0.8, 0.3, 1.2 );
 
-			const targetAngular = - this.inputX * steeringGrip * 4 * direction;
-			this.angularSpeed = THREE.MathUtils.lerp( this.angularSpeed, targetAngular, dt * 4 );
+			const targetAngular = - this.inputX * steeringGrip * 5 * direction;
+			this.angularSpeed = THREE.MathUtils.lerp( this.angularSpeed, targetAngular, dt * 6 );
 
 			this.container.rotateY( this.angularSpeed * dt );
 
@@ -139,7 +139,7 @@ export class Vehicle {
 
 			} else {
 
-				this.linearSpeed = THREE.MathUtils.lerp( this.linearSpeed, targetSpeed * MAX_SPEED, dt * 1.5 );
+				this.linearSpeed = THREE.MathUtils.lerp( this.linearSpeed, targetSpeed * MAX_SPEED, dt * 2.2 );
 
 			}
 

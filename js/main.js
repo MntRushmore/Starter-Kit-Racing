@@ -3,16 +3,18 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { LightProbeGrid } from 'three/addons/lighting/LightProbeGrid.js';
 import { LightProbeGridHelper } from 'three/addons/helpers/LightProbeGridHelper.js';
 import { createWorldSettings, createWorld, addBroadphaseLayer, addObjectLayer, enableCollision, registerAll, updateWorld, rigidBody, box, MotionType } from 'crashcat';
-import { Vehicle, MAX_SPEED } from './Vehicle.js';
+import { MAX_SPEED } from './Vehicle.js';
 import { Camera } from './Camera.js';
 import { Controls } from './Controls.js';
 import { buildTrack, decodeCells, computeSpawnPosition, computeTrackBounds } from './Track.js';
-import { buildWallColliders, createSphereBody } from './Physics.js';
+import { buildWallColliders } from './Physics.js';
 import { SmokeTrails } from './Particles.js';
 import { DriftMarks } from './DriftMarks.js';
 import { GameAudio } from './Audio.js';
-import { LapTimer } from './LapTimer.js';
 import { ColorMapGLTFLoader } from './Loader.js';
+import { buildWaypoints, buildWaypointDebug } from './Waypoints.js';
+import { Race } from './Race.js';
+import { RaceUI } from './RaceUI.js';
 
 
 const renderer = new THREE.WebGLRenderer( { antialias: true, outputBufferType: THREE.HalfFloatType } );
@@ -119,16 +121,15 @@ async function init() {
 	registerAll();
 	await loadModels();
 
-	const mapParam = new URLSearchParams( window.location.search ).get( 'map' );
+	const params = new URLSearchParams( window.location.search );
+	const mapParam = params.get( 'map' );
 	let customCells = null;
-	let spawn = null;
 
 	if ( mapParam ) {
 
 		try {
 
 			customCells = decodeCells( mapParam );
-			spawn = computeSpawnPosition( customCells );
 
 		} catch ( e ) {
 
@@ -154,7 +155,16 @@ async function init() {
 	scene.fog.near = groundSize * 0.4;
 	scene.fog.far = groundSize * 0.8;
 
-	buildTrack( scene, models, customCells );
+	buildTrack( scene, models, customCells, { excludeNpcTrucks: true } );
+
+	const debugFlag = params.get( 'debug' );
+	if ( debugFlag && debugFlag.includes( 'waypoints' ) ) {
+
+		const wp = buildWaypoints( customCells );
+		if ( wp ) scene.add( buildWaypointDebug( wp ) );
+		else console.warn( 'buildWaypoints returned null — track has no closed loop with finish' );
+
+	}
 
 	// Probes
 
@@ -168,8 +178,6 @@ async function init() {
 	probes.position.set( bounds.centerX, probeHeight / 2, bounds.centerZ );
 	probes.bake( renderer, scene, { cubemapSize: 32, near: 0.1, far: groundSize } );
 	scene.add( probes );
-
-	// scene.add( new LightProbeGridHelper( probes, 0.5 ) );
 
 	//
 
@@ -200,26 +208,6 @@ async function init() {
 		restitution: 0.0,
 	} );
 
-	const sphereBody = createSphereBody( world, spawn ? spawn.position : null );
-
-	const vehicle = new Vehicle();
-	vehicle.rigidBody = sphereBody;
-	vehicle.physicsWorld = world;
-
-	if ( spawn ) {
-
-		const [ sx, sy, sz ] = spawn.position;
-		vehicle.spherePos.set( sx, sy, sz );
-		vehicle.prevModelPos.set( sx, 0, sz );
-		vehicle.container.rotation.y = spawn.angle;
-
-	}
-
-	const vehicleGroup = vehicle.init( models[ 'vehicle-truck-yellow' ] );
-	scene.add( vehicleGroup );
-
-	dirLight.target = vehicleGroup;
-
 	const cam = new Camera();
 	scene.add( cam.debug );
 
@@ -231,27 +219,73 @@ async function init() {
 	const audio = new GameAudio();
 	audio.init( cam.camera );
 
-	const lapTimer = new LapTimer( customCells, mapParam );
+	const raceUI = new RaceUI();
 
 	const _forward = new THREE.Vector3();
 	const _camLead = new THREE.Vector3();
 
-	const contactListener = {
-		onContactAdded( bodyA, bodyB ) {
+	let race = null;
+	let contactListener = null;
 
-			if ( bodyA !== sphereBody && bodyB !== sphereBody ) return;
+	function startRace( settings ) {
 
-			_forward.set( 0, 0, 1 ).applyQuaternion( vehicle.container.quaternion );
-			_forward.y = 0;
-			_forward.normalize();
+		console.log( '[Race] starting with', settings );
 
-			const impactVelocity = Math.abs( vehicle.modelVelocity.dot( _forward ) );
-			audio.playImpact( impactVelocity );
+		// Tear down any prior race state.
+		if ( race ) tearDownRace( race );
+
+		try {
+			race = new Race( { scene, world, models, cells: customCells, settings } );
+		} catch ( e ) {
+			console.error( '[Race] failed to construct:', e );
+			throw e;
+		}
+
+		console.log( '[Race] entries:', race.entries.length, 'state:', race.state );
+
+		const playerBody = race.player.body;
+
+		contactListener = {
+			onContactAdded( bodyA, bodyB ) {
+
+				if ( bodyA !== playerBody && bodyB !== playerBody ) return;
+
+				_forward.set( 0, 0, 1 ).applyQuaternion( race.player.vehicle.container.quaternion );
+				_forward.y = 0;
+				_forward.normalize();
+
+				const impactVelocity = Math.abs( race.player.vehicle.modelVelocity.dot( _forward ) );
+				audio.playImpact( impactVelocity );
+
+			}
+		};
+
+		dirLight.target = race.player.group;
+
+		const editorLink = document.getElementById( 'editor-link' );
+		if ( editorLink ) editorLink.style.display = '';
+
+	}
+
+	function tearDownRace( r ) {
+
+		for ( const e of r.entries ) {
+
+			scene.remove( e.group );
+			rigidBody.remove( world, e.body );
 
 		}
-	};
+
+	}
+
+	const editorLink = document.getElementById( 'editor-link' );
+	if ( editorLink ) editorLink.style.display = 'none';
+
+	const initialSettings = await raceUI.showSetup();
+	startRace( initialSettings );
 
 	const timer = new THREE.Timer();
+	let resultsShown = false;
 
 	function animate() {
 
@@ -264,23 +298,57 @@ async function init() {
 
 		updateWorld( world, contactListener, dt );
 
-		vehicle.update( dt, input );
+		race.tick( dt, input );
+
+		const player = race.player.vehicle;
 
 		dirLight.position.set(
-			vehicle.spherePos.x + 11.4,
+			player.spherePos.x + 11.4,
 			15,
-			vehicle.spherePos.z - 5.3
+			player.spherePos.z - 5.3
 		);
 
-		const mv = vehicle.modelVelocity;
-		_camLead.set( 0, 0, 1 ).applyQuaternion( vehicle.container.quaternion ).multiplyScalar( Math.sqrt( mv.x * mv.x + mv.z * mv.z ) );
-		cam.update( dt, vehicle.spherePos, _camLead );
-		particles.update( dt, vehicle );
-		driftMarks.update( dt, vehicle );
-		audio.update( dt, vehicle.linearSpeed / MAX_SPEED, input.z, vehicle.driftIntensity );
+		const mv = player.modelVelocity;
+		_camLead.set( 0, 0, 1 ).applyQuaternion( player.container.quaternion ).multiplyScalar( Math.sqrt( mv.x * mv.x + mv.z * mv.z ) );
+		cam.update( dt, player.spherePos, _camLead );
+		particles.update( dt, player );
+		driftMarks.update( dt, player );
+		audio.update( dt, player.linearSpeed / MAX_SPEED, input.z, player.driftIntensity );
 
-		const hasInput = input.touchActive || Math.abs( input.x ) > 0.05 || Math.abs( input.z ) > 0.05;
-		lapTimer.update( dt, vehicle.spherePos, hasInput );
+		const hud = race.hudPayload();
+
+		if ( race.state === 'countdown' ) {
+
+			raceUI.showCountdown( race.countdownRemaining );
+
+		} else if ( race.state === 'racing' ) {
+
+			raceUI.hideCountdown();
+			raceUI.updateHUD( hud );
+
+		} else if ( race.state === 'finished' && ! resultsShown ) {
+
+			resultsShown = true;
+			raceUI.hideHUD();
+			raceUI.hideCountdown();
+			raceUI.showResults( hud, {
+				onRaceAgain: async () => {
+
+					resultsShown = false;
+					if ( editorLink ) editorLink.style.display = 'none';
+					const next = await raceUI.showSetup();
+					startRace( next );
+
+				},
+				onEditTrack: () => {
+
+					const url = mapParam ? `editor.html?map=${ mapParam }` : 'editor.html';
+					window.location.href = url;
+
+				},
+			} );
+
+		}
 
 		renderer.render( scene, cam.camera );
 
